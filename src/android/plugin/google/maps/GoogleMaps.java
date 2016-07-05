@@ -27,6 +27,8 @@ import android.os.Handler;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.Gravity;
+import android.view.MotionEvent;
+import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
@@ -108,6 +110,7 @@ public class GoogleMaps extends CordovaPlugin implements View.OnClickListener, O
   private float density;
   private HashMap<String, Bundle> bufferForLocationDialog = new HashMap<String, Bundle>();
   private FrameLayout mapFrame = null;
+  private Runnable enableScrollingRunnable;
 
   @Override
   public void onScrollChanged() {
@@ -156,6 +159,11 @@ public class GoogleMaps extends CordovaPlugin implements View.OnClickListener, O
   private JSONArray _saveArgs = null;
   private CallbackContext _saveCallbackContext = null;
   private LatLngBounds initCameraBounds;
+  private int fingers = 0;
+  private long lastZoomTime = 0;
+  private float lastSpan = -1;
+  private Handler handler = new Handler();
+  private ScaleGestureDetector gestureDetector;
 
   @SuppressLint("NewApi") @Override
   public void initialize(final CordovaInterface cordova, final CordovaWebView webView) {
@@ -549,14 +557,67 @@ public class GoogleMaps extends CordovaPlugin implements View.OnClickListener, O
       options.camera(builder.build());
     }
 
-    mapView = new MapView(activity, options);
+    mapView = new MapView(activity, options) {
+      @Override
+      public boolean dispatchTouchEvent(MotionEvent ev) {
+        switch (ev.getAction() & MotionEvent.ACTION_MASK) {
+          case MotionEvent.ACTION_POINTER_DOWN:
+            fingers = fingers + 1;
+            break;
+          case MotionEvent.ACTION_POINTER_UP:
+            fingers = fingers - 1;
+            break;
+          case MotionEvent.ACTION_UP:
+            fingers = 0;
+            break;
+          case MotionEvent.ACTION_DOWN:
+            fingers = 1;
+            break;
+        }
+        if (fingers > 1) {
+          disableScrolling();
+        } else if (fingers < 1) {
+          enableScrolling();
+        }
+        if (fingers > 1) {
+          return gestureDetector.onTouchEvent(ev);
+        } else {
+          return super.dispatchTouchEvent(ev);
+        }
+      }
+    };
+
     mapView.onCreate(null);
     mapView.onResume();
     mapView.getMapAsync(new OnMapReadyCallback() {
       @Override
-      public void onMapReady(GoogleMap googleMap) {
+      public void onMapReady(final GoogleMap googleMap) {
 
         map = googleMap;
+
+        gestureDetector = new ScaleGestureDetector(mapView.getContext(), new ScaleGestureDetector.OnScaleGestureListener() {
+          @Override
+          public boolean onScale(ScaleGestureDetector detector) {
+            if (lastSpan == -1) {
+              lastSpan = detector.getCurrentSpan();
+            } else if (detector.getEventTime() - lastZoomTime >= 50) {
+              lastZoomTime = detector.getEventTime();
+              googleMap.animateCamera(CameraUpdateFactory.zoomBy(getZoomValue(detector.getCurrentSpan(), lastSpan)), 50, null);
+            }
+            return false;
+          }
+
+          @Override
+          public boolean onScaleBegin(ScaleGestureDetector detector) {
+            lastSpan = -1;
+            return true;
+          }
+
+          @Override
+          public void onScaleEnd(ScaleGestureDetector detector) {
+            lastSpan = -1;
+          }
+        });
 
         try {
           //controls
@@ -658,6 +719,31 @@ public class GoogleMaps extends CordovaPlugin implements View.OnClickListener, O
       }
     });
 
+  }
+
+  private void enableScrolling() {
+    if (map != null && !map.getUiSettings().isScrollGesturesEnabled()) {
+      enableScrollingRunnable = new Runnable() {
+        @Override
+        public void run() {
+          map.getUiSettings().setAllGesturesEnabled(true);
+        }
+      };
+      cordova.getActivity().runOnUiThread(enableScrollingRunnable);
+    }
+  }
+
+  private void disableScrolling() {
+//    handler.removeCallbacksAndMessages(null);
+    if (map != null && map.getUiSettings().isScrollGesturesEnabled()) {
+      map.getUiSettings().setAllGesturesEnabled(false);
+    }
+  }
+
+  private float getZoomValue(float currentSpan, float lastSpan) {
+    double value = Math.log(currentSpan / lastSpan) / Math.log(4.85d);
+    Log.d(TAG, "getZoomValue: FLERG" + Double.toString(value));
+    return (float) value;
   }
 
   private float contentToView(long d) {
