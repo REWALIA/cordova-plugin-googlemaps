@@ -197,6 +197,11 @@ NSDictionary *initOptions;
         isEnabled = [[gestures valueForKey:@"zoom"] boolValue];
         self.map.settings.zoomGestures = isEnabled;
       }
+      //allowScrollGesturesDuringRotateOrZoom
+      if ([gestures valueForKey:@"allowScrollGesturesDuringRotateOrZoom"] != nil) {
+        isEnabled = [[gestures valueForKey:@"allowScrollGesturesDuringRotateOrZoom"] boolValue];
+        self.map.settings.allowScrollGesturesDuringRotateOrZoom = isEnabled;
+      }
     }
   
     //mapType
