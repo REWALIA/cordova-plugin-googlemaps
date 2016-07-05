@@ -626,6 +626,31 @@ public class GoogleMaps extends CordovaPlugin implements View.OnClickListener, O
             callbackContext.success();
           }
 
+
+          if (params.has("controls")) {
+            JSONObject controls = params.getJSONObject("controls");
+
+            if (controls.has("myLocationEnabled")) {
+              Boolean isEnabled = controls.getBoolean("myLocationEnabled");
+              JSONArray args = new JSONArray();
+              args.put("Map.setMyLocationEnabled");
+              args.put(isEnabled);
+              GoogleMaps.this.execute("exec", args, new PluginUtil.MyCallbackContext("myLocationButton", webView) {
+                @Override
+                public void onResult(PluginResult pluginResult) {
+                  callbackContext.success();
+                }
+              });
+
+              map.getUiSettings().setMyLocationButtonEnabled(false);
+
+            } else {
+              callbackContext.success();
+            }
+          } else {
+            callbackContext.success();
+          }
+
         } catch (Exception e) {
           Log.d("GoogleMaps", "------->error");
           callbackContext.error(e.getMessage());
